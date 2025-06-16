@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AKATSUKI - Real-Time Transaction Fraud Detection</title>
+  <!-- Correct path to the CSS file inside the static folder -->
+  <link rel="stylesheet" href="/static/style.css">
+  <!-- Include the ONNX Runtime for the web -->
+  <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/ort.min.js"></script>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1 class="title">AKATSUKI</h1>
+      <p class="subtitle">Real-Time Transaction Fraud Detection (Client-Side)</p>
+    </div>
+
+    <!-- The form no longer has action/method. It calls a JS function on submit. -->
+    <form id="prediction-form">
+
+      <h2 class="section-header">🕐 Transaction Time & Status</h2>
+      <div class="form-row">
+        <div class="form-group">
+          <label for="TXN_TIMESTAMP">Transaction Timestamp:</label>
+          <input type="datetime-local" id="TXN_TIMESTAMP" name="TXN_TIMESTAMP" required>
+        </div>
+        <div class="form-group">
+          <label for="TRN_STATUS">Transaction Status:</label>
+          <select id="TRN_STATUS" name="TRN_STATUS" required>
+            <option value="COMPLETED">COMPLETED</option>
+            <option value="FAILED">FAILED</option>
+          </select>
+        </div>
+      </div>
+       <div class="form-row">
+          <div class="form-group">
+            <label for="RESPONSE_CODE">Response Code:</label>
+            <input type="text" id="RESPONSE_CODE" placeholder="e.g., 0, Z7, ZM" name="RESPONSE_CODE" required>
+          </div>
+           <div class="form-group">
+              <label for="TRANSACTION_TYPE">Transaction Type:</label>
+              <select id="TRANSACTION_TYPE" name="TRANSACTION_TYPE" required>
+                <option value="P2P">P2P (Person to Person)</option>
+                <option value="P2M">P2M (Person to Merchant)</option>
+              </select>
+            </div>
+      </div>
+
+
+      <h2 class="section-header">💰 Transaction Details</h2>
+      <div class="form-row">
+        <div class="form-group">
+          <label for="AMOUNT">Amount (₹):</label>
+          <input type="number" step="0.01" id="AMOUNT" name="AMOUNT" placeholder="e.g., 500.00" required>
+        </div>
+        <div class="form-group">
+            <label for="INITIATION_MODE">Initiation Mode:</label>
+            <select id="INITIATION_MODE" name="INITIATION_MODE" required>
+                <option>Default</option>
+                <option>QR Code</option>
+                <option>Secure QR Code</option>
+                <option>BHARAT QR Code</option>
+                <option>Intent</option>
+                <option>Secure Intent</option>
+                <option>SDK (Software development Kit)</option>
+                <option>Mandate</option>
+                <option>Dynamic Qr Code</option>
+                <option>Online Static QR Code</option>
+                <option>UNKNOWN</option>
+            </select>
+        </div>
+      </div>
+
+
+      <h2 class="section-header">👤 Payer Information</h2>
+      <div class="form-row">
+        <div class="form-group">
+            <label for="PAYER_VPA">Payer VPA:</label>
+            <input type="text" id="PAYER_VPA" name="PAYER_VPA" placeholder="e.g., user@okhdfcbank" required>
+        </div>
+        <div class="form-group">
+            <label for="PAYER_IFSC">Payer IFSC:</label>
+            <input type="text" id="PAYER_IFSC" name="PAYER_IFSC" placeholder="e.g., 05877e798bf097ac74cc" required>
+        </div>
+      </div>
+
+
+      <h2 class="section-header">🏦 Beneficiary Information</h2>
+       <div class="form-row">
+          <div class="form-group">
+            <label for="BENEFICIARY_CODE">Beneficiary Code:</label>
+            <input type="text" id="BENEFICIARY_CODE" name="BENEFICIARY_CODE" placeholder="e.g., 5411" required>
+          </div>
+          <div class="form-group">
+            <label for="BENEFICIARY_VPA">Beneficiary VPA:</label>
+            <input type="text" id="BENEFICIARY_VPA" name="BENEFICIARY_VPA" placeholder="e.g., recipient@okicici" required>
+          </div>
+      </div>
+      <div class="form-group">
+          <label for="BENEFICIARY_IFSC">Beneficiary IFSC:</label>
+          <input type="text" id="BENEFICIARY_IFSC" name="BENEFICIARY_IFSC" required>
+      </div>
+
+
+      <h2 class="section-header">📱 Device, Network & Location</h2>
+      <div class="form-row">
+        <div class="form-group">
+          <label for="DEVICE_ID">Device ID:</label>
+          <input type="text" id="DEVICE_ID" name="DEVICE_ID" required>
+        </div>
+        <div class="form-group">
+          <label for="IP_ADDRESS">IP Address:</label>
+          <input type="text" id="IP_ADDRESS" name="IP_ADDRESS" required>
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label for="LATITUDE">Latitude:</label>
+          <input type="text" id="LATITUDE" name="LATITUDE" required>
+        </div>
+        <div class="form-group">
+          <label for="LONGITUDE">Longitude:</label>
+          <input type="text" id="LONGITUDE" name="LONGITUDE" required>
+        </div>
+      </div>
+
+      <button class="analyze-btn" type="submit">🔍 Analyze Transaction</button>
+    </form>
+
+    <!-- This div will be used to display the prediction result -->
+    <div id="result-container" class="result" style="display: none;">
+      <div class="result-header">
+        <span id="resultIcon"></span>
+        <span id="resultText"></span>
+      </div>
+    </div>
+  </div>
+
+<script>
+  // --- DEFINE THE FEATURE LISTS (must match the Python script) ---
+  const CLF_MODEL_COLUMNS = [
+    'TRN_STATUS', 'RESPONSE_CODE', 'BENEFICIARY_CODE', 'INITIATION_MODE',
+    'TRANSACTION_TYPE', 'hour', 'day_of_week', 'is_night_time',
+    'PAYER_VPA_PROVIDER', 'BENEFICIARY_VPA_PROVIDER', 'AMOUNT_log',
+    'PAYER_IFSC_freq', 'BENEFICIARY_IFSC_freq', 'DEVICE_ID_freq', 'IP_FREQ',
+    'LATITUDE_freq_enc', 'LONGITUDE_freq_enc'
+  ];
+
+  const XGB_MODEL_COLUMNS = CLF_MODEL_COLUMNS.concat(['BENEFICIARY_CODE_TE']);
+
+  // --- GLOBAL VARIABLES TO HOLD MODELS AND ARTIFACTS ---
+  let xgbSession;
+  let clfSession;
+  let preprocessingArtifacts = {};
+  
+  // --- LOAD ALL ASSETS WHEN THE PAGE LOADS ---
+  async function loadAssets() {
+      try {
+          // Set execution provider to 'wasm' for broad compatibility
+          ort.env.wasm.numThreads = 1; 
+          ort.env.wasm.simd = true;
+
+          const modelPromises = [
+              ort.InferenceSession.create('/onnx_models/xgb_model.onnx'),
+              ort.InferenceSession.create('/onnx_models/clf_type_model.onnx')
+          ];
+
+          const artifactFiles = [
+              'label_encoder_maps', 'scam_type_map', 'target_encoding_beneficiary_code',
+              'freq_map_PAYER_IFSC', 'freq_map_BENEFICIARY_IFSC', 'freq_map_DEVICE_ID',
+              'freq_map_IP_ADDRESS', 'freq_map_LATITUDE', 'freq_map_LONGITUDE'
+          ];
+          
+          const artifactPromises = artifactFiles.map(file =>
+              fetch(`/preprocessing/${file}.json`).then(response => response.json())
+          );
+          
+          const [xgb, clf, ...artifacts] = await Promise.all([...modelPromises, ...artifactPromises]);
+          
+          xgbSession = xgb;
+          clfSession = clf;
+          
+          artifacts.forEach((data, index) => {
+              preprocessingArtifacts[artifactFiles[index]] = data;
+          });
+
+          console.log("All models and preprocessing artifacts loaded successfully!");
+          document.querySelector('.analyze-btn').disabled = false;
+          document.querySelector('.analyze-btn').textContent = '🔍 Analyze Transaction';
+
+      } catch (error) {
+          console.error("Failed to load assets:", error);
+          const resultContainer = document.getElementById('result-container');
+          resultContainer.className = 'result fraud';
+          document.getElementById('resultIcon').textContent = '❌';
+          document.getElementById('resultText').textContent = 'Error: Could not load ML models.';
+          resultContainer.style.display = 'block';
+      }
+  }
+  
+  // --- MAIN PREDICTION FUNCTION ---
+  async function handlePrediction(event) {
+      event.preventDefault(); // Prevent form from submitting the traditional way
+      const form = event.target;
+      const formData = new FormData(form);
+      const inputData = Object.fromEntries(formData.entries());
+
+      try {
+          // --- 1. PREPROCESSING PIPELINE IN JAVASCRIPT ---
+          let processedData = {};
+          const txnTimestamp = new Date(inputData.TXN_TIMESTAMP);
+          processedData.hour = txnTimestamp.getHours();
+          processedData.day_of_week = txnTimestamp.getDay();
+          processedData.is_night_time = (processedData.hour < 6 || processedData.hour > 22) ? 1 : 0;
+          processedData.AMOUNT_log = Math.log1p(parseFloat(inputData.AMOUNT));
+          processedData.BENEFICIARY_CODE = parseInt(inputData.BENEFICIARY_CODE, 10);
+          const leMaps = preprocessingArtifacts.label_encoder_maps;
+          processedData.TRN_STATUS = leMaps.TRN_STATUS[inputData.TRN_STATUS] ?? 0;
+          processedData.RESPONSE_CODE = leMaps.RESPONSE_CODE[inputData.RESPONSE_CODE] ?? 0;
+          processedData.INITIATION_MODE = leMaps.INITIATION_MODE[inputData.INITIATION_MODE] ?? 0;
+          processedData.TRANSACTION_TYPE = leMaps.TRANSACTION_TYPE[inputData.TRANSACTION_TYPE] ?? 0;
+          const payerVpaProvider = inputData.PAYER_VPA.split('@').pop() || 'UNKNOWN';
+          processedData.PAYER_VPA_PROVIDER = leMaps.PAYER_VPA_PROVIDER[payerVpaProvider] ?? 0;
+          const benefVpaProvider = inputData.BENEFICIARY_VPA.split('@').pop() || 'UNKNOWN';
+          processedData.BENEFICIARY_VPA_PROVIDER = leMaps.BENEFICIARY_VPA_PROVIDER[benefVpaProvider] ?? 0;
+          processedData.PAYER_IFSC_freq = preprocessingArtifacts.freq_map_PAYER_IFSC[inputData.PAYER_IFSC] ?? 0;
+          processedData.BENEFICIARY_IFSC_freq = preprocessingArtifacts.freq_map_BENEFICIARY_IFSC[input_data.BENEFICIARY_IFSC] ?? 0;
+          processedData.DEVICE_ID_freq = preprocessingArtifacts.freq_map_DEVICE_ID[inputData.DEVICE_ID] ?? 0;
+          processedData.IP_FREQ = preprocessingArtifacts.freq_map_IP_ADDRESS[inputData.IP_ADDRESS] ?? 0;
+          processedData.LATITUDE_freq_enc = preprocessingArtifacts.freq_map_LATITUDE[inputData.LATITUDE] ?? 0;
+          processedData.LONGITUDE_freq_enc = preprocessingArtifacts.freq_map_LONGITUDE[inputData.LONGITUDE] ?? 0;
+          const teArtifact = preprocessingArtifacts.target_encoding_beneficiary_code;
+          processedData.BENEFICIARY_CODE_TE = teArtifact.target_mean_map[String(processedData.BENEFICIARY_CODE)] ?? teArtifact.global_mean;
+
+          // --- 2. PREPARE TENSORS FOR MODELS ---
+          const xgbInputArray = XGB_MODEL_COLUMNS.map(col => processedData[col] ?? 0);
+          const xgbTensor = new ort.Tensor('float32', Float32Array.from(xgbInputArray), [1, XGB_MODEL_COLUMNS.length]);
+          const clfInputArray = CLF_MODEL_COLUMNS.map(col => processedData[col] ?? 0);
+          const clfTensor = new ort.Tensor('float32', Float32Array.from(clfInputArray), [1, CLF_MODEL_COLUMNS.length]);
+          
+          // --- 3. RUN INFERENCE ---
+          const xgbResults = await xgbSession.run({ float_input: xgbTensor });
+          const isFraud = xgbResults.probabilities.data[1] >= 0.3;
+          let predictionResultText = "Not Fraud";
+          if (isFraud) {
+              const clfResults = await clfSession.run({ float_input: clfTensor });
+              const scamTypeCode = clfResults.label.data[0];
+              const scamTypeName = preprocessingArtifacts.scam_type_map[scamTypeCode] ?? "Unknown Scam Type";
+              predictionResultText = `FRAUD DETECTED. Scam Type: ${scamTypeName}`;
+          }
+          
+          displayResult(predictionResultText);
+      } catch (error) {
+          console.error("An error occurred during prediction:", error);
+          displayResult(`Error: ${error.message}`);
+      }
+  }
+
+  function displayResult(prediction) {
+      const resultContainer = document.getElementById('result-container');
+      const resultIcon = document.getElementById('resultIcon');
+      const resultText = document.getElementById('resultText');
+      const isFraud = prediction.includes('FRAUD');
+      resultContainer.className = isFraud ? 'result fraud' : 'result safe';
+      resultIcon.textContent = isFraud ? '🚨' : '✅';
+      resultText.textContent = prediction;
+      resultContainer.style.display = 'block';
+  }
+
+  document.querySelector('.analyze-btn').disabled = true;
+  document.querySelector('.analyze-btn').textContent = 'Loading Models...';
+  document.getElementById('prediction-form').addEventListener('submit', handlePrediction);
+  document.addEventListener('DOMContentLoaded', loadAssets);
+</script>
+</body>
+</html>
